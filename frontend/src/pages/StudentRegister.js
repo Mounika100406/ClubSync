@@ -31,7 +31,7 @@ function StudentRegister() {
     try {
 
       const res = await axios.post(
-        "http://localhost:5000/student-register",
+        "https://clubsync-8i0l.onrender.com/student-register",
         {
           name,
           email,

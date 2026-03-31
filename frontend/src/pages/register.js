@@ -29,7 +29,7 @@ function Register() {
     try {
 
       const res = await axios.post(
-        "http://localhost:5000/register",
+        "https://clubsync-8i0l.onrender.com/register",
         {
           name,
           email,

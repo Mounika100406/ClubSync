@@ -32,7 +32,7 @@ function StudentDashboard() {
 
   const fetchEvents = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/student-events");
+      const res = await axios.get("https://clubsync-8i0l.onrender.com/student-events");
       const data = res.data || [];
 
       setEvents(data);
@@ -50,7 +50,7 @@ function StudentDashboard() {
 
       // ✅ FIXED API NAME HERE
       const res = await axios.get(
-        `http://localhost:5000/my-events/${studentId}`
+        `https://clubsync-8i0l.onrender.com/my-events/${studentId}`
       );
 
       const today = new Date();
@@ -72,7 +72,7 @@ function StudentDashboard() {
     try {
 
       const res = await axios.post(
-        "http://localhost:5000/register-event",
+        "https://clubsync-8i0l.onrender.com/register-event",
         {
           student_id: studentId,
           event_id: eventId
@@ -96,7 +96,7 @@ function StudentDashboard() {
     try {
 
       await axios.delete(
-        "http://localhost:5000/cancel-registration",
+        "https://clubsync-8i0l.onrender.com/cancel-registration",
         {
           data: {
             student_id: studentId,

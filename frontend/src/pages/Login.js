@@ -15,7 +15,7 @@ function Login() {
 
     try {
 
-      const res = await axios.post("http://localhost:5000/login", {
+      const res = await axios.post("https://clubsync-8i0l.onrender.com/login", {
         email: adminEmail,
         password: adminPassword
       });
@@ -45,7 +45,7 @@ function Login() {
 
     try {
 
-      const res = await axios.post("http://localhost:5000/student-login", {
+      const res = await axios.post("https://clubsync-8i0l.onrender.com/student-login", {
         email: studentEmail,
         password: studentPassword
       });

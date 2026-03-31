@@ -19,7 +19,7 @@ function StudentLogin() {
     try {
 
       const res = await axios.post(
-        "http://localhost:5000/student-login",
+        "https://clubsync-8i0l.onrender.com/student-login",
         {
           email,
           password

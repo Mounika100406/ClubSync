@@ -44,7 +44,7 @@ function Dashboard() {
   const fetchEvents = async () => {
 
     const res = await axios.get(
-      `http://localhost:5000/events/${adminId}`
+      `https://clubsync-8i0l.onrender.com/events/${adminId}`
     );
 
     setEvents(res.data);
@@ -66,7 +66,7 @@ function Dashboard() {
     }
 
     await axios.post(
-      "http://localhost:5000/create-event",
+      "https://clubsync-8i0l.onrender.com/create-event",
       {
         title,
         description,
@@ -96,7 +96,7 @@ function Dashboard() {
   const deleteEvent = async (id) => {
 
     await axios.delete(
-      `http://localhost:5000/delete-event/${id}`
+      `https://clubsync-8i0l.onrender.com/delete-event/${id}`
     );
 
     alert("Event Deleted");
@@ -111,7 +111,7 @@ function Dashboard() {
       new Date(editDate).toISOString().split("T")[0];
 
     await axios.put(
-      `http://localhost:5000/update-event/${editingId}`,
+      `https://clubsync-8i0l.onrender.com/update-event/${editingId}`,
       {
         title:editTitle,
         description:editDescription,
@@ -133,7 +133,7 @@ function Dashboard() {
   const viewStudents = async (eventId) => {
 
     const res = await axios.get(
-      `http://localhost:5000/event-students/${eventId}`
+      `https://clubsync-8i0l.onrender.com/event-students/${eventId}`
     );
 
     setStudents(res.data);
@@ -387,7 +387,7 @@ Delete
 
 {students.map((s,i)=>(
 <tr key={i}>
-<td>{s.name}</td>
+<td>{s.name}</td>0
 <td>{s.email}</td>
 </tr>
 ))}
@@ -400,11 +400,11 @@ Delete
 
 <br/>
 
-<button onClick={()=>window.open(`http://localhost:5000/download-excel/${event.id}`)}>
+<button onClick={()=>window.open(`https://clubsync-8i0l.onrender.com/download-excel/${event.id}`)}>
 Download Excel
 </button>
 
-<button onClick={()=>window.open(`http://localhost:5000/download-pdf/${event.id}`)}>
+<button onClick={()=>window.open(`https://clubsync-8i0l.onrender.com/download-pdf/${event.id}`)}>
 Download PDF
 </button>
 
