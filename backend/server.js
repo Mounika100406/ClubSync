@@ -3,7 +3,7 @@ const PDFDocument = require("pdfkit");
 const { Document, Packer, Paragraph, TextRun } = require("docx");
 const nodemailer = require("nodemailer");
 const express = require("express");
-const mysql = require("mysql2");
+const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const cors = require("cors");
 require("dotenv").config();
@@ -14,25 +14,13 @@ app.use(cors());
 app.use(express.json());
 
 /* =====================================================
-        MYSQL CONNECTION
+        POSTGRESQL CONNECTION (RENDER DB)
 ===================================================== */
 
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-/* =====================================================
-        MAIL CONFIG
-===================================================== */
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
   }
 });
 
@@ -54,28 +42,37 @@ app.post("/register", async (req, res) => {
     const { name, email, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    db.query(
-      "INSERT INTO admins (name,email,password) VALUES (?,?,?)",
-      [name, email, hashedPassword],
-      (err) => {
-        if (err) return res.json({ message: "Error registering admin" });
-        res.json({ message: "Admin Registered Successfully" });
-      }
+    await pool.query(
+      "INSERT INTO admins (name,email,password) VALUES ($1,$2,$3)",
+      [name, email, hashedPassword]
     );
-  } catch {
-    res.json({ message: "Server Error" });
+
+    res.json({ message: "Admin Registered Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error registering admin" });
   }
 });
 
 // ADMIN LOGIN
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
+
   const { email, password } = req.body;
 
-  db.query("SELECT * FROM admins WHERE email=?", [email], async (err, results) => {
-    if (results.length === 0)
+  try {
+
+    const result = await pool.query(
+      "SELECT * FROM admins WHERE email=$1",
+      [email]
+    );
+
+    if (result.rows.length === 0)
       return res.json({ message: "Admin Not Found" });
 
-    const match = await bcrypt.compare(password, results[0].password);
+    const admin = result.rows[0];
+
+    const match = await bcrypt.compare(password, admin.password);
 
     if (!match)
       return res.json({ message: "Wrong Password" });
@@ -83,15 +80,21 @@ app.post("/login", (req, res) => {
     res.json({
       message: "Login Success",
       admin: {
-        id: results[0].id,
-        name: results[0].name
+        id: admin.id,
+        name: admin.name
       }
     });
-  });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error logging in" });
+  }
+
 });
 
 // CREATE EVENT
-app.post("/create-event", (req, res) => {
+app.post("/create-event", async (req, res) => {
+
   const {
     title,
     description,
@@ -103,61 +106,83 @@ app.post("/create-event", (req, res) => {
     admin_id
   } = req.body;
 
-  db.query(
-    `INSERT INTO events 
-    (title,description,date,location,start_time,registration_deadline,max_students,admin_id)
-    VALUES (?,?,?,?,?,?,?,?)`,
-    [title, description, date, location, start_time, registration_deadline, max_students, admin_id],
-    (err) => {
-      if (err) return res.json({ message: "Error creating event" });
-      res.json({ message: "Event Created Successfully" });
-    }
-  );
+  try {
+
+    await pool.query(
+      `INSERT INTO events 
+      (title,description,date,location,start_time,registration_deadline,max_students,admin_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [title, description, date, location, start_time, registration_deadline, max_students, admin_id]
+    );
+
+    res.json({ message: "Event Created Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error creating event" });
+  }
+
 });
 
 // ADMIN EVENTS
-app.get("/events/:adminId", (req, res) => {
-  db.query(
-    `SELECT events.*, COUNT(registrations.id) AS registration_count
-     FROM events
-     LEFT JOIN registrations ON events.id = registrations.event_id
-     WHERE admin_id=?
-     GROUP BY events.id`,
-    [req.params.adminId],
-    (err, results) => res.json(results)
-  );
+app.get("/events/:adminId", async (req, res) => {
+
+  try {
+
+    const result = await pool.query(
+      `SELECT events.*, COUNT(registrations.id) AS registration_count
+       FROM events
+       LEFT JOIN registrations ON events.id = registrations.event_id
+       WHERE admin_id=$1
+       GROUP BY events.id`,
+      [req.params.adminId]
+    );
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.log(err);
+    res.json([]);
+  }
+
 });
 
 // DELETE EVENT
-app.delete("/delete-event/:id", (req, res) => {
-  db.query("DELETE FROM registrations WHERE event_id=?", [req.params.id], () => {
-    db.query("DELETE FROM events WHERE id=?", [req.params.id], () => {
-      res.json({ message: "Event Deleted Successfully" });
-    });
-  });
+app.delete("/delete-event/:id", async (req, res) => {
+
+  try {
+
+    await pool.query("DELETE FROM registrations WHERE event_id=$1", [req.params.id]);
+    await pool.query("DELETE FROM events WHERE id=$1", [req.params.id]);
+
+    res.json({ message: "Event Deleted Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error deleting event" });
+  }
+
 });
 
 // UPDATE EVENT
-app.put("/update-event/:id", (req, res) => {
+app.put("/update-event/:id", async (req, res) => {
+
   const { title, description, date, location, start_time, registration_deadline } = req.body;
 
-  db.query(
-    `UPDATE events SET title=?,description=?,date=?,location=?,start_time=?,registration_deadline=? WHERE id=?`,
-    [title, description, date, location, start_time, registration_deadline, req.params.id],
-    () => res.json({ message: "Event Updated Successfully" })
-  );
-});
+  try {
 
-// STUDENTS LIST
-app.get("/event-students/:eventId", (req, res) => {
-  db.query(
-    `SELECT students.name,students.email,students.phone,students.branch,students.section
-     FROM registrations
-     JOIN students ON registrations.student_id = students.id
-     WHERE registrations.event_id=?`,
-    [req.params.eventId],
-    (err, results) => res.json(results)
-  );
+    await pool.query(
+      `UPDATE events SET title=$1,description=$2,date=$3,location=$4,start_time=$5,registration_deadline=$6 WHERE id=$7`,
+      [title, description, date, location, start_time, registration_deadline, req.params.id]
+    );
+
+    res.json({ message: "Event Updated Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error updating event" });
+  }
+
 });
 
 /* =====================================================
@@ -166,26 +191,46 @@ app.get("/event-students/:eventId", (req, res) => {
 
 // STUDENT REGISTER
 app.post("/student-register", async (req, res) => {
-  const { name, email, password, phone, branch, section } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
 
-  db.query(
-    `INSERT INTO students (name,email,password,phone,branch,section)
-     VALUES (?,?,?,?,?,?)`,
-    [name, email, hashedPassword, phone, branch, section],
-    () => res.json({ message: "Student Registered Successfully" })
-  );
+  const { name, email, password, phone, branch, section } = req.body;
+
+  try {
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      `INSERT INTO students (name,email,password,phone,branch,section)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [name, email, hashedPassword, phone, branch, section]
+    );
+
+    res.json({ message: "Student Registered Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error registering student" });
+  }
+
 });
 
 // STUDENT LOGIN
-app.post("/student-login", (req, res) => {
+app.post("/student-login", async (req, res) => {
+
   const { email, password } = req.body;
 
-  db.query("SELECT * FROM students WHERE email=?", [email], async (err, results) => {
-    if (results.length === 0)
+  try {
+
+    const result = await pool.query(
+      "SELECT * FROM students WHERE email=$1",
+      [email]
+    );
+
+    if (result.rows.length === 0)
       return res.json({ message: "Student Not Found" });
 
-    const match = await bcrypt.compare(password, results[0].password);
+    const student = result.rows[0];
+
+    const match = await bcrypt.compare(password, student.password);
 
     if (!match)
       return res.json({ message: "Wrong Password" });
@@ -193,134 +238,92 @@ app.post("/student-login", (req, res) => {
     res.json({
       message: "Login Success",
       student: {
-        id: results[0].id,
-        name: results[0].name
+        id: student.id,
+        name: student.name
       }
     });
-  });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error logging in" });
+  }
+
 });
 
 // REGISTER EVENT
-app.post("/register-event", (req, res) => {
+app.post("/register-event", async (req, res) => {
+
   const { student_id, event_id } = req.body;
 
-  db.query(
-    "SELECT * FROM registrations WHERE student_id=? AND event_id=?",
-    [student_id, event_id],
-    (err, result) => {
-      if (result.length > 0)
-        return res.json({ message: "Already Registered" });
+  try {
 
-      db.query(
-        "SELECT COUNT(*) AS total FROM registrations WHERE event_id=?",
-        [event_id],
-        (err, countResult) => {
+    const exists = await pool.query(
+      "SELECT * FROM registrations WHERE student_id=$1 AND event_id=$2",
+      [student_id, event_id]
+    );
 
-          db.query(
-            "SELECT max_students FROM events WHERE id=?",
-            [event_id],
-            (err, eventResult) => {
+    if (exists.rows.length > 0)
+      return res.json({ message: "Already Registered" });
 
-              if (countResult[0].total >= eventResult[0].max_students)
-                return res.json({ message: "Event Full" });
+    await pool.query(
+      "INSERT INTO registrations (student_id,event_id) VALUES ($1,$2)",
+      [student_id, event_id]
+    );
 
-              db.query(
-                "INSERT INTO registrations (student_id,event_id) VALUES (?,?)",
-                [student_id, event_id],
-                () => res.json({ message: "Registered Successfully" })
-              );
-            }
-          );
-        }
-      );
-    }
-  );
+    res.json({ message: "Registered Successfully" });
+
+  } catch (err) {
+    console.log(err);
+    res.json({ message: "Error registering" });
+  }
+
 });
 
 // STUDENT EVENTS
-app.get("/student-events", (req, res) => {
-  db.query(
-    `SELECT events.*, admins.name AS admin_name,
-     COUNT(registrations.id) AS registration_count
-     FROM events
-     JOIN admins ON events.admin_id = admins.id
-     LEFT JOIN registrations ON events.id = registrations.event_id
-     WHERE events.date >= CURDATE()
-     GROUP BY events.id
-     ORDER BY events.date ASC`,
-    (err, results) => res.json(results)
-  );
+app.get("/student-events", async (req, res) => {
+
+  try {
+
+    const result = await pool.query(
+      `SELECT events.*, admins.name AS admin_name,
+       COUNT(registrations.id) AS registration_count
+       FROM events
+       JOIN admins ON events.admin_id = admins.id
+       LEFT JOIN registrations ON events.id = registrations.event_id
+       GROUP BY events.id
+       ORDER BY events.date ASC`
+    );
+
+    res.json(result.rows);
+
+  } catch (err) {
+    console.log(err);
+    res.json([]);
+  }
+
 });
 
-// GET REGISTERED EVENTS FOR A STUDENT
-app.get("/my-events/:studentId", (req, res) => {
-  const studentId = req.params.studentId;
+// MY EVENTS
+app.get("/my-events/:studentId", async (req, res) => {
 
-  db.query(
-    `SELECT events.*, admins.name AS admin_name
-     FROM registrations
-     JOIN events ON registrations.event_id = events.id
-     JOIN admins ON events.admin_id = admins.id
-     WHERE registrations.student_id = ?
-     ORDER BY events.date ASC`,
-    [studentId],
-    (err, results) => {
-      if (err) {
-        console.log(err);
-        return res.json({ message: "Error fetching events" });
-      }
-      res.json(results);
-    }
-  );
-});
+  try {
 
-/* =====================================================
-                DOWNLOAD SECTION
-===================================================== */
+    const result = await pool.query(
+      `SELECT events.*, admins.name AS admin_name
+       FROM registrations
+       JOIN events ON registrations.event_id = events.id
+       JOIN admins ON events.admin_id = admins.id
+       WHERE registrations.student_id=$1`,
+      [req.params.studentId]
+    );
 
-// EXCEL
-app.get("/download-excel/:eventId", async (req, res) => {
-  db.query(
-    `SELECT * FROM students JOIN registrations 
-     ON students.id = registrations.student_id WHERE event_id=?`,
-    [req.params.eventId],
-    async (err, results) => {
+    res.json(result.rows);
 
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Students");
+  } catch (err) {
+    console.log(err);
+    res.json([]);
+  }
 
-      sheet.columns = [
-        { header: "Name", key: "name" },
-        { header: "Email", key: "email" }
-      ];
-
-      results.forEach(r => sheet.addRow(r));
-
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", "attachment; filename=students.xlsx");
-
-      await workbook.xlsx.write(res);
-      res.end();
-    }
-  );
-});
-
-// PDF
-app.get("/download-pdf/:eventId", (req, res) => {
-  db.query(
-    `SELECT * FROM students JOIN registrations 
-     ON students.id = registrations.student_id WHERE event_id=?`,
-    [req.params.eventId],
-    (err, results) => {
-
-      const doc = new PDFDocument();
-      res.setHeader("Content-Type", "application/pdf");
-      doc.pipe(res);
-
-      results.forEach(s => doc.text(`${s.name} - ${s.email}`));
-      doc.end();
-    }
-  );
 });
 
 /* =====================================================
